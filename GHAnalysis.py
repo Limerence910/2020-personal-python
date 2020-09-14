@@ -1,7 +1,9 @@
 import json
 import os
 import argparse
-
+import multiprocessing
+from numba import jit 
+#@jit
 class Data:
     def __init__(self, dict_address: int = None, reload: int = 0):
         if reload == 1:
@@ -19,42 +21,33 @@ class Data:
         self.__4Events4PerP = {}
         self.__4Events4PerR = {}
         self.__4Events4PerPPerR = {}
+        json_list = []
+        
+        pool = multiprocessing.Pool(5)
         for root, dic, files in os.walk(dict_address):
             for f in files:
-                json_list = []
-                str_list = []
-                if f[-5:] == '.json':
-                    json_path = f
-                    x = open(dict_address+'\\'+json_path,
-                             'r', encoding='utf-8').read()
-
-                    for _x in x.split('\n'): 
-                        if len(_x) > 0:
-                            str_list.append(_x)
-                    
-                   
-                    for i, _str in enumerate(str_list):
-                        try:
-                            json_list.append(json.loads(_str))
-                        except:
-                            pass
-                records = self.__listOfNestedDict2ListOfDict(json_list)
-                for i in records:
-                    if not self.__4Events4PerP.get(i['actor__login'], 0):
-                        self.__4Events4PerP.update({i['actor__login']: {}})
-                        self.__4Events4PerPPerR.update({i['actor__login']: {}})
-                    self.__4Events4PerP[i['actor__login']][i['type']
-                                                 ] = self.__4Events4PerP[i['actor__login']].get(i['type'], 0)+1
-                    if not self.__4Events4PerR.get(i['repo__name'], 0):
-                        self.__4Events4PerR.update({i['repo__name']: {}})
-                    self.__4Events4PerR[i['repo__name']][i['type']
-                                               ] = self.__4Events4PerR[i['repo__name']].get(i['type'], 0)+1
-                    if not self.__4Events4PerPPerR[i['actor__login']].get(i['repo__name'], 0):
-                        self.__4Events4PerPPerR[i['actor__login']].update({i['repo__name']: {}})
-                    self.__4Events4PerPPerR[i['actor__login']][i['repo__name']][i['type']
-                                                                  ] = self.__4Events4PerPPerR[i['actor__login']][i['repo__name']].get(i['type'], 0)+1
-        
-        
+                pool.apply_async(self.get_content, args=(f,dict_address, json_list))
+            pool.close()
+            pool.join()
+            
+            #for tests in os.walk(dict_address):
+                
+            with open(dict_address + '\\' + 'records.json','r', encoding='utf-8') as r:
+                records = json.load(r)
+            for i in records:
+                if not self.__4Events4PerP.get(i['actor__login'], 0):
+                    self.__4Events4PerP.update({i['actor__login']: {}})
+                    self.__4Events4PerPPerR.update({i['actor__login']: {}})
+                self.__4Events4PerP[i['actor__login']][i['type']
+                                            ] = self.__4Events4PerP[i['actor__login']].get(i['type'], 0) + 1
+                if not self.__4Events4PerR.get(i['repo__name'], 0):
+                    self.__4Events4PerR.update({i['repo__name']: {}})
+                self.__4Events4PerR[i['repo__name']][i['type']
+                                        ] = self.__4Events4PerR[i['repo__name']].get(i['type'], 0) + 1
+                if not self.__4Events4PerPPerR[i['actor__login']].get(i['repo__name'], 0):
+                    self.__4Events4PerPPerR[i['actor__login']].update({i['repo__name']: {}})
+                self.__4Events4PerPPerR[i['actor__login']][i['repo__name']][i['type']
+                                                                    ] = self.__4Events4PerPPerR[i['actor__login']][i['repo__name']].get(i['type'], 0) + 1
         with open('1.json', 'w', encoding='utf-8') as f:
             json.dump(self.__4Events4PerP,f)
         with open('2.json', 'w', encoding='utf-8') as f:
@@ -62,14 +55,33 @@ class Data:
         with open('3.json', 'w', encoding='utf-8') as f:
             json.dump(self.__4Events4PerPPerR,f)
 
+    def get_content(self, f, dict_address, json_list):
+        
+        if f[-5:] == '.json':
+            json_path = f
+            x = open(dict_address+'\\'+json_path,
+                    'r', encoding='utf-8').read()
+            str_list = [_x for _x in x.split('\n') if len(_x) > 0]
+            for  i,_str in enumerate(str_list):
+                try:
+                    json_list.append(json.loads(_str))
+                except:
+                    pass
+            
+        records = self.__listOfNestedDict2ListOfDict(json_list)
+        
+        with open(dict_address + '\\' + 'records.json' ,'w') as p:
+            json.dump(records, p)
+
     def __parseDict(self, d: dict, prefix: str):
         _d = {}
         for k in d.keys():
-            if str(type(d[k]))[-6:-2] == 'dict':
-                _d.update(self.__parseDict(d[k], k))
-            else:
-                _k = f'{prefix}__{k}' if prefix != '' else k
-                _d[_k] = d[k]
+            if k == 'login' or k == 'actor' or k == 'repo' or k == 'type' or k == 'name':
+                if str(type(d[k]))[-6:-2] == 'dict':
+                    _d.update(self.__parseDict(d[k], k))
+                else:
+                    _k = f'{prefix}__{k}' if prefix != '' else k
+                    _d[_k] = d[k]
         return _d
 
     def __listOfNestedDict2ListOfDict(self, a: list):
@@ -139,4 +151,6 @@ class Run:
 
 
 if __name__ == '__main__':
+
     a = Run()
+    
